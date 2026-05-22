@@ -1,0 +1,59 @@
+- hosts: jenkins
+  become: yes
+
+  tasks:
+
+    - name: Install dependencies
+      apt:
+        name:
+          - docker.io
+          - git
+          - make
+          - unzip
+          - curl
+          - wget
+          - openjdk-21-jdk
+        state: present
+        update_cache: yes
+
+    - name: Start Docker
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Install kubectl
+      shell: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+      args:
+        creates: /usr/local/bin/kubectl
+
+    - name: Install kind
+      shell: |
+        curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
+        chmod +x ./kind
+        mv ./kind /usr/local/bin/kind
+      args:
+        creates: /usr/local/bin/kind
+
+    - name: Install Terraform
+      shell: |
+        wget -O- https://apt.releases.hashicorp.com/gpg | \
+        gpg --dearmor | \
+        tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+
+        echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+        https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+        tee /etc/apt/sources.list.d/hashicorp.list
+
+        apt update
+        apt install terraform -y
+      args:
+        creates: /usr/bin/terraform
