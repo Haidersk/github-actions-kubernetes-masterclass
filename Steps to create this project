@@ -1,0 +1,712 @@
+# CloudForge — End-to-End Deployment Implementation Guide
+
+# Objective
+
+Deploy a complete production-style DevOps platform using:
+
+* AWS EC2
+* Terraform
+* Ansible
+* Docker
+* Kubernetes (Kind)
+* Jenkins
+* SonarQube
+* Trivy
+* Prometheus
+* Grafana
+* ArgoCD
+* GitHub
+* CI/CD Pipeline
+
+---
+
+# Final Architecture
+
+```text
+Developer
+   ↓
+GitHub
+   ↓
+Jenkins Pipeline
+   ├── Terraform
+   ├── Ansible
+   ├── SonarQube
+   ├── Trivy
+   ├── Docker Build
+   └── Kubernetes Deploy
+            ↓
+Kind Kubernetes Cluster
+            ↓
+Frontend + Backend + MySQL
+            ↓
+Prometheus + Grafana
+            ↓
+AI Ops Layer
+```
+
+---
+
+# STEP 1 — Create AWS Infrastructure
+
+## Create EC2 Instances
+
+### Jenkins Server
+
+Recommended:
+
+* Ubuntu 24.04
+* t3.large
+* 30 GB Storage
+
+Security Group Ports:
+
+| Port | Purpose        |
+| ---- | -------------- |
+| 22   | SSH            |
+| 8080 | Jenkins        |
+| 80   | HTTP           |
+| 443  | HTTPS          |
+| 9000 | SonarQube      |
+| 3000 | Grafana        |
+| 9090 | Prometheus     |
+| 8888 | SkillPulse App |
+
+---
+
+### SonarQube Server
+
+Recommended:
+
+* Ubuntu 24.04
+* t3.medium
+* 20 GB Storage
+
+Open:
+
+| Port | Purpose   |
+| ---- | --------- |
+| 22   | SSH       |
+| 9000 | SonarQube |
+
+---
+
+# STEP 2 — Connect to Jenkins EC2
+
+```bash
+ssh -i key.pem ubuntu@<JENKINS_PUBLIC_IP>
+```
+
+---
+
+# STEP 3 — Install Java
+
+```bash
+sudo apt update
+sudo apt install openjdk-17-jdk -y
+```
+
+Verify:
+
+```bash
+java -version
+```
+
+---
+
+# STEP 4 — Install Jenkins
+
+```bash
+curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo tee \
+/usr/share/keyrings/jenkins-keyring.asc > /dev/null
+
+echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
+https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
+/etc/apt/sources.list.d/jenkins.list > /dev/null
+
+sudo apt update
+sudo apt install jenkins -y
+```
+
+Start Jenkins:
+
+```bash
+sudo systemctl start jenkins
+sudo systemctl enable jenkins
+```
+
+---
+
+# STEP 5 — Install DevOps Tools on Jenkins Server
+
+## Terraform
+
+```bash
+wget -O- https://apt.releases.hashicorp.com/gpg | \
+gpg --dearmor | \
+sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+sudo tee /etc/apt/sources.list.d/hashicorp.list
+
+sudo apt update && sudo apt install terraform -y
+```
+
+---
+
+## Docker
+
+```bash
+sudo apt install docker.io -y
+
+sudo systemctl start docker
+sudo systemctl enable docker
+
+sudo usermod -aG docker ubuntu
+sudo usermod -aG docker jenkins
+```
+
+Restart Jenkins:
+
+```bash
+sudo systemctl restart jenkins
+```
+
+---
+
+## kubectl
+
+```bash
+curl -LO "https://dl.k8s.io/release/$(curl -L -s \
+https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+```
+
+---
+
+## kind
+
+```bash
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
+
+chmod +x ./kind
+
+sudo mv ./kind /usr/local/bin/kind
+```
+
+---
+
+## Ansible
+
+```bash
+sudo apt install ansible -y
+```
+
+---
+
+## AWS CLI
+
+```bash
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+-o "awscliv2.zip"
+
+sudo apt install unzip -y
+
+unzip awscliv2.zip
+
+sudo ./aws/install
+```
+
+---
+
+## Trivy
+
+```bash
+wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
+gpg --dearmor | \
+sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] \
+https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | \
+sudo tee /etc/apt/sources.list.d/trivy.list
+
+sudo apt update
+
+sudo apt install trivy -y
+```
+
+---
+
+# STEP 6 — Verify All Tools
+
+```bash
+terraform --version
+ansible --version
+docker --version
+kubectl version --client
+kind --version
+aws --version
+trivy --version
+git --version
+```
+
+---
+
+# STEP 7 — Create Kind Cluster
+
+Go to project:
+
+```bash
+cd ~/cloudforge
+```
+
+Create cluster:
+
+```bash
+kind create cluster --config k8s/kind-config.yaml --name skillpulse
+```
+
+Verify:
+
+```bash
+kubectl get nodes
+```
+
+---
+
+# STEP 8 — Install SonarQube
+
+Connect to SonarQube server:
+
+```bash
+ssh -i key.pem ubuntu@<SONARQUBE_PUBLIC_IP>
+```
+
+Install Docker:
+
+```bash
+sudo apt update
+sudo apt install docker.io -y
+```
+
+Run SonarQube:
+
+```bash
+docker run -d \
+--name sonarqube \
+-p 9000:9000 \
+sonarqube:lts-community
+```
+
+Open:
+
+```text
+http://<SONARQUBE_PUBLIC_IP>:9000
+```
+
+Default login:
+
+```text
+admin
+admin
+```
+
+---
+
+# STEP 9 — Configure Jenkins
+
+Open:
+
+```text
+http://<JENKINS_PUBLIC_IP>:8080
+```
+
+Get admin password:
+
+```bash
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+```
+
+Install suggested plugins.
+
+---
+
+# STEP 10 — Install Jenkins Plugins
+
+Go:
+
+```text
+Manage Jenkins
+   ↓
+Plugins
+```
+
+Install:
+
+* Pipeline
+* GitHub Integration
+* Docker Pipeline
+* SonarQube Scanner
+* Kubernetes
+* Blue Ocean
+
+---
+
+# STEP 11 — Add Jenkins Credentials
+
+Go:
+
+```text
+Manage Jenkins
+   ↓
+Credentials
+```
+
+Add:
+
+## GitHub Token
+
+Type:
+
+```text
+Secret Text
+```
+
+ID:
+
+```text
+github-token
+```
+
+---
+
+## DockerHub Credentials
+
+Type:
+
+```text
+Username with Password
+```
+
+ID:
+
+```text
+dockerhub
+```
+
+---
+
+## AWS Credentials
+
+Type:
+
+```text
+AWS Credentials
+```
+
+ID:
+
+```text
+aws-creds
+```
+
+---
+
+## SonarQube Token
+
+Type:
+
+```text
+Secret Text
+```
+
+ID:
+
+```text
+sonarqube-token
+```
+
+---
+
+# STEP 12 — Configure SonarQube in Jenkins
+
+Go:
+
+```text
+Manage Jenkins
+   ↓
+System
+   ↓
+SonarQube Servers
+```
+
+Add:
+
+| Field | Value                  |
+| ----- | ---------------------- |
+| Name  | sonarqube              |
+| URL   | http://<SONAR_IP>:9000 |
+| Token | sonarqube-token        |
+
+---
+
+# STEP 13 — Create GitHub Repository Structure
+
+```text
+cloudforge/
+│
+├── backend/
+├── frontend/
+├── terraform/
+├── ansible/
+├── k8s/
+├── monitoring/
+├── Jenkinsfile
+├── Makefile
+└── README.md
+```
+
+---
+
+# STEP 14 — Create Jenkinsfile
+
+File:
+
+```text
+Jenkinsfile
+```
+
+Add:
+
+```groovy
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_BACKEND = "yourdockerhub/skillpulse-backend"
+        DOCKER_FRONTEND = "yourdockerhub/skillpulse-frontend"
+        TAG = "${BUILD_NUMBER}"
+    }
+
+    stages {
+
+        stage('Clone Repository') {
+            steps {
+                git branch: 'main',
+                url: 'https://github.com/yourusername/cloudforge.git'
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                sh '''
+                cd terraform/environments/dev
+                terraform init
+                '''
+            }
+        }
+
+        stage('Terraform Apply') {
+            steps {
+                sh '''
+                cd terraform/environments/dev
+                terraform apply -auto-approve
+                '''
+            }
+        }
+
+        stage('Run Ansible') {
+            steps {
+                sh 'ansible-playbook ansible/playbooks/setup.yml'
+            }
+        }
+
+        stage('SonarQube Scan') {
+            steps {
+                sh 'sonar-scanner'
+            }
+        }
+
+        stage('Trivy File Scan') {
+            steps {
+                sh 'trivy fs .'
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                sh 'make build'
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            steps {
+                sh '''
+                trivy image $DOCKER_BACKEND:$TAG
+                trivy image $DOCKER_FRONTEND:$TAG
+                '''
+            }
+        }
+
+        stage('Docker Login') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+
+                    sh '''
+                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    '''
+                }
+            }
+        }
+
+        stage('Push Images') {
+            steps {
+                sh '''
+                docker push $DOCKER_BACKEND:$TAG
+                docker push $DOCKER_FRONTEND:$TAG
+                '''
+            }
+        }
+
+        stage('Deploy Kubernetes') {
+            steps {
+                sh 'make apply'
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                sh 'make status'
+            }
+        }
+    }
+}
+```
+
+---
+
+# STEP 15 — Push Project to GitHub
+
+```bash
+git init
+
+git add .
+
+git commit -m "initial cloudforge setup"
+
+git branch -M main
+
+git remote add origin <GITHUB_REPO_URL>
+
+git push -u origin main
+```
+
+---
+
+# STEP 16 — Create Jenkins Pipeline Job
+
+Go:
+
+```text
+New Item
+   ↓
+Pipeline
+```
+
+Configure:
+
+| Field          | Value                    |
+| -------------- | ------------------------ |
+| Pipeline Type  | Pipeline script from SCM |
+| SCM            | Git                      |
+| Repository URL | GitHub repo URL          |
+| Branch         | main                     |
+| Script Path    | Jenkinsfile              |
+
+Save.
+
+---
+
+# STEP 17 — Run Pipeline
+
+Click:
+
+```text
+Build Now
+```
+
+Pipeline automatically:
+
+* Creates infra
+* Configures servers
+* Scans code
+* Builds Docker images
+* Pushes images
+* Deploys Kubernetes manifests
+* Verifies rollout
+
+---
+
+# STEP 18 — Verify Application
+
+```bash
+kubectl get pods -n skillpulse
+```
+
+Open:
+
+```text
+http://<JENKINS_PUBLIC_IP>:8888
+```
+
+---
+
+# STEP 19 — Monitoring Setup
+
+Deploy:
+
+* Prometheus
+* Grafana
+
+Inside:
+
+```text
+monitoring/
+```
+
+Verify:
+
+```bash
+kubectl get pods -A
+```
+
+---
+
+# STEP 20 — Future Enhancements
+
+* Replace Kind with EKS
+* Add ArgoCD auto-sync
+* Add HTTPS ingress
+* Add Slack alerts
+* Add AI auto-remediation
+* Add Horizontal Pod Autoscaler
+* Add ELK Stack logging
+
+---
+
+# Final Result
+
+You now have:
+
+* Production-style DevOps platform
+* Fully automated CI/CD pipeline
+* Kubernetes deployment automation
+* Security scanning
+* Monitoring stack
+* GitOps-ready architecture
+* AI Ops-ready foundation
