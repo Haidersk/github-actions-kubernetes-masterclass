@@ -19,7 +19,7 @@ pipeline {
         stage('Terraform Init') {
             steps {
                 sh '''
-                cd terraform/environments/dev
+                cd Terraform/environments/prod
                 terraform init
                 '''
             }
@@ -28,7 +28,7 @@ pipeline {
         stage('Terraform Apply') {
             steps {
                 sh '''
-                cd terraform/environments/dev
+                cd Terraform/environments/prod
                 terraform apply -auto-approve
                 '''
             }
