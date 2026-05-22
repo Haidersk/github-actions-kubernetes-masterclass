@@ -16,6 +16,14 @@ pipeline {
             }
         }
 
+        stage('Debug Repo Structure') {
+            steps {
+                sh 'pwd'
+                sh 'ls -la'
+                sh 'find . -type d'
+            }
+        }
+        
         stage('Terraform Init') {
             steps {
                 sh '''
