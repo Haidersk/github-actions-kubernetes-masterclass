@@ -48,8 +48,29 @@ pipeline {
         stage('Run Ansible') {
             steps {
                 sh '''
+                    # Get EC2 Public IP
+                    cd Terraform/environment/prod
+                    PUBLIC_IP=$(terraform output -raw public_ip)
+
+                    KEY_NAME="us-east-1"
+
+                    echo "EC2 Public IP: $PUBLIC_IP"
+
+                    cd $WORKSPACE
+
+                    # Generate Inventory
+                    sed -e "s/\\${public_ip}/$PUBLIC_IP/g" \
+                        -e "s/\\${key_name}/$KEY_NAME/g" \
+                        Terraform/Ansible/inventory.tpl > /tmp/inventory.ini
+
+                    echo "=== Generated Inventory ==="
+                    cat /tmp/inventory.ini
+
+                    # Run Ansible Playbook
                     ansible-playbook Terraform/Ansible/playbook.yml \
-                        --inventory Terraform/Ansible/inventory.tpl \
+                        --inventory /tmp/inventory.ini \
+                        --private-key ~/.ssh/us-east-1.pem \
+                        -u ubuntu \
                         -v
                 '''
             }
@@ -61,6 +82,7 @@ pipeline {
                     credentialsId: 'SONAR_TOKEN',
                     variable: 'SONAR_TOKEN'
                 )]) {
+
                     sh '''
                         sonar-scanner \
                             -Dsonar.projectKey=skillpulse \
@@ -105,7 +127,10 @@ pipeline {
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+
+                    sh '''
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    '''
                 }
             }
         }
@@ -136,6 +161,7 @@ pipeline {
         success {
             echo "Pipeline SUCCESS - Build #${BUILD_NUMBER}"
         }
+
         failure {
             echo "Pipeline FAILED - Build #${BUILD_NUMBER}"
         }
