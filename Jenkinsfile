@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_BACKEND = "yourdockerhub/skillpulse-backend"
-        DOCKER_FRONTEND = "yourdockerhub/skillpulse-frontend"
+        DOCKER_BACKEND = "haider3897/skillpulse-backend"
+        DOCKER_FRONTEND = "haider3897/skillpulse-frontend"
         TAG = "${BUILD_NUMBER}"
     }
 
@@ -19,7 +19,7 @@ pipeline {
         stage('Terraform Init') {
             steps {
                 sh '''
-                cd Terraform/environments/prod
+                cd Terraform/environment/prod
                 terraform init
                 '''
             }
@@ -28,7 +28,7 @@ pipeline {
         stage('Terraform Apply') {
             steps {
                 sh '''
-                cd Terraform/environments/prod
+                cd Terraform/environment/prod
                 terraform apply -auto-approve
                 '''
             }
@@ -36,7 +36,7 @@ pipeline {
 
         stage('Run Ansible') {
             steps {
-                sh 'ansible-playbook ansible/playbooks/setup.yml'
+                sh 'terraform/ansible/playbook.yml'
             }
         }
 
@@ -70,7 +70,7 @@ pipeline {
         stage('Docker Login') {
             steps {
                 withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub',
+                    credentialsId: 'docker',
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
