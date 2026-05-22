@@ -24,24 +24,6 @@ pipeline {
             }
         }
         
-        stage('Terraform Init') {
-            steps {
-                sh '''
-                cd Terraform/environment/prod
-                terraform init
-                '''
-            }
-        }
-
-        stage('Terraform Apply') {
-            steps {
-                sh '''
-                cd Terraform/environment/prod
-                terraform apply -auto-approve
-                '''
-            }
-        }
-
         stage('Run Ansible') {
             steps {
                 sh 'Terraform/ansible/playbook.yml'
