@@ -1,12 +1,12 @@
-module "jenkins" {
-  source        = "../../modules/ec2"
+resource "aws_instance" "project" {
+  ami                    = var.ami
+  instance_type          = var.instance_type
+  subnet_id              = var.subnet_id
+  vpc_security_group_ids = [var.sg]
 
-  ami           = var.ami
-  instance_type = var.instance_type
-  subnet_id     = data.aws_subnets.default.ids[0]
+  key_name = var.key_name
 
-  sg            = "sg-0c1d587650c0f8801"
-
-  key_name      = var.key_name
-  name           = "jenkins-server"
+  tags = {
+    Name = var.name
+  }
 }
