@@ -48,8 +48,8 @@ pipeline {
         stage('Run Ansible') {
             steps {
                 sh '''
-                    ansible-playbook Terraform/ansible/playbook.yml \
-                        --inventory Terraform/ansible/inventory.ini \
+                    ansible-playbook Terraform/Ansible/playbook.yml \
+                        --inventory Terraform/Ansible/inventory.tpl \
                         -v
                 '''
             }
