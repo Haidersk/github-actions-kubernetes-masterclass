@@ -1,7 +1,7 @@
 terraform {
   backend "s3" {
-    bucket = "skillpulse-terraform-state"
+    bucket = "skillpulse-tfstate-haider-886492071842"
     key    = "prod/terraform.tfstate"
-    region = "us-east-1"
+    region = "ap-south-1"
   }
 }
