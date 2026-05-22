@@ -36,7 +36,7 @@ pipeline {
 
         stage('Run Ansible') {
             steps {
-                sh 'terraform/ansible/playbook.yml'
+                sh 'Terraform/ansible/playbook.yml'
             }
         }
 
