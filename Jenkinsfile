@@ -45,31 +45,24 @@ pipeline {
             }
         }
 
-        stage('Run Ansible') {
+	stage('Run Ansible') {
             steps {
                 sh '''
-                    # Step 1: Get EC2 public IP
-                    cd Terraform/environment/prod
-                    terraform refresh -no-color > /dev/null 2>&1
-                    PUBLIC_IP=$(terraform output -raw public_ip 2>/dev/null)
-                    echo "EC2 Public IP: [$PUBLIC_IP]"
+                    PUBLIC_IP="3.238.131.108"
 
-                    if [ -z "$PUBLIC_IP" ]; then
-                        echo "ERROR: Could not get public IP from Terraform"
-                        exit 1
-                    fi
+                    echo "EC2 Public IP: $PUBLIC_IP"
 
-                    # Step 2: Write inventory directly
+                    # Write inventory directly
                     echo "[jenkins]" > /tmp/inventory.ini
                     echo "$PUBLIC_IP ansible_user=ubuntu ansible_ssh_private_key_file=/var/lib/jenkins/.ssh/us-east-1.pem" >> /tmp/inventory.ini
 
                     echo "=== Generated Inventory ==="
                     cat /tmp/inventory.ini
 
-                    # Step 3: Add to known hosts
+                    # Add to known hosts
                     ssh-keyscan -H $PUBLIC_IP >> /var/lib/jenkins/.ssh/known_hosts 2>/dev/null
 
-                    # Step 4: Run playbook
+                    # Run playbook
                     ansible-playbook Terraform/Ansible/playbook.yml \
                         --inventory /tmp/inventory.ini \
                         --private-key /var/lib/jenkins/.ssh/us-east-1.pem \
@@ -77,7 +70,7 @@ pipeline {
                         -v
                 '''
             }
-        }
+        }	
 
         stage('SonarQube Scan') {
             steps {
