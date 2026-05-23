@@ -76,8 +76,8 @@ pipeline {
         stage('SonarQube Scan') {
             steps {
                 withCredentials([string(
-                    credentialsId: 'SONAR_TOKEN',
-                    variable: 'SONAR_TOKEN'
+                    credentialsId: 'sonarqube'
+                    variable: 'sonarqube'
                 )]) {
 
                     sh '''
@@ -85,7 +85,7 @@ pipeline {
                             -Dsonar.projectKey=skillpulse \
                             -Dsonar.sources=. \
                             -Dsonar.host.url=$SONAR_HOST \
-                            -Dsonar.login=$SONAR_TOKEN
+                            -Dsonar.login=$sonarqube
                     '''
                 }
             }
