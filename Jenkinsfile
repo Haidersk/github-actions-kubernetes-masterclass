@@ -47,30 +47,31 @@ pipeline {
 
 	stage('Run Ansible') {
             steps {
-                sh '''
-                    PUBLIC_IP="3.238.131.108"
+                sshagent(credentials: ['ansible-ssh-key']) {
+                    sh '''
+                        PUBLIC_IP="3.238.131.108"
 
-                    echo "EC2 Public IP: $PUBLIC_IP"
+                        echo "EC2 Public IP: $PUBLIC_IP"
 
-                    # Write inventory directly
-                    echo "[jenkins]" > /tmp/inventory.ini
-                    echo "$PUBLIC_IP ansible_user=ubuntu ansible_ssh_private_key_file=/var/lib/jenkins/.ssh/us-east-1.pem" >> /tmp/inventory.ini
+                        # Write inventory
+                        echo "[jenkins]" > /tmp/inventory.ini
+                        echo "$PUBLIC_IP ansible_user=ubuntu" >> /tmp/inventory.ini
 
-                    echo "=== Generated Inventory ==="
-                    cat /tmp/inventory.ini
+                        echo "=== Generated Inventory ==="
+                        cat /tmp/inventory.ini
 
-                    # Add to known hosts
-                    ssh-keyscan -H $PUBLIC_IP >> /var/lib/jenkins/.ssh/known_hosts 2>/dev/null
+                        # Add to known hosts
+                        ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts 2>/dev/null
 
-                    # Run playbook
-                    ansible-playbook Terraform/Ansible/playbook.yml \
-                        --inventory /tmp/inventory.ini \
-                        --private-key /var/lib/jenkins/.ssh/us-east-1.pem \
-                        -u ubuntu \
-                        -v
-                '''
+                        # Run playbook
+                        ansible-playbook Terraform/Ansible/playbook.yml \
+                            --inventory /tmp/inventory.ini \
+                            -u ubuntu \
+                            -v
+                    '''
+                }
             }
-        }	
+        }
 
         stage('SonarQube Scan') {
             steps {
