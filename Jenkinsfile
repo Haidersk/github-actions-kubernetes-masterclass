@@ -48,28 +48,31 @@ pipeline {
         stage('Run Ansible') {
             steps {
                 sh '''
-                    # Get EC2 Public IP
+                    # Step 1: Get EC2 public IP
                     cd Terraform/environment/prod
-                    PUBLIC_IP=$(terraform output -raw public_ip)
+                    terraform refresh -no-color > /dev/null 2>&1
+                    PUBLIC_IP=$(terraform output -raw public_ip 2>/dev/null)
+                    echo "EC2 Public IP: [$PUBLIC_IP]"
 
-                    KEY_NAME="us-east-1"
+                    if [ -z "$PUBLIC_IP" ]; then
+                        echo "ERROR: Could not get public IP from Terraform"
+                        exit 1
+                    fi
 
-                    echo "EC2 Public IP: $PUBLIC_IP"
-
-                    cd $WORKSPACE
-
-                    # Generate Inventory
-                    sed -e "s/\\${public_ip}/$PUBLIC_IP/g" \
-                        -e "s/\\${key_name}/$KEY_NAME/g" \
-                        Terraform/Ansible/inventory.tpl > /tmp/inventory.ini
+                    # Step 2: Write inventory directly
+                    echo "[jenkins]" > /tmp/inventory.ini
+                    echo "$PUBLIC_IP ansible_user=ubuntu ansible_ssh_private_key_file=/var/lib/jenkins/.ssh/us-east-1.pem" >> /tmp/inventory.ini
 
                     echo "=== Generated Inventory ==="
                     cat /tmp/inventory.ini
 
-                    # Run Ansible Playbook
+                    # Step 3: Add to known hosts
+                    ssh-keyscan -H $PUBLIC_IP >> /var/lib/jenkins/.ssh/known_hosts 2>/dev/null
+
+                    # Step 4: Run playbook
                     ansible-playbook Terraform/Ansible/playbook.yml \
                         --inventory /tmp/inventory.ini \
-                        --private-key ~/.ssh/us-east-1.pem \
+                        --private-key /var/lib/jenkins/.ssh/us-east-1.pem \
                         -u ubuntu \
                         -v
                 '''
