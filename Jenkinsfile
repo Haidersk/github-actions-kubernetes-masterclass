@@ -5,7 +5,7 @@ pipeline {
         DOCKER_BACKEND  = "haider3897/skillpulse-backend"
         DOCKER_FRONTEND = "haider3897/skillpulse-frontend"
         TAG             = "${BUILD_NUMBER}"
-        SONAR_HOST      = "http://54.165.117.57:9000"
+        SONAR_HOST      = "http://35.172.219.47:9000"
     }
 
     stages {
