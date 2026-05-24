@@ -11,7 +11,7 @@ pipeline {
 
     stages {
 
-        // ── 1. CLONE ─────────────────────────────────────────────────
+        // ── 1. CLONE REPOSITORY ─────────────────────────────────
         stage('Clone Repository') {
             steps {
                 git branch: 'main',
@@ -19,18 +19,7 @@ pipeline {
             }
         }
 
-        // ── 2. DEBUG ─────────────────────────────────────────────────
-        stage('Debug Repo Structure') {
-            steps {
-                sh '''
-                    pwd
-                    ls -la
-                    ls -la Terraform/environment/prod || echo "ERROR: PATH NOT FOUND"
-                '''
-            }
-        }
-
-        // ── 3. TERRAFORM ─────────────────────────────────────────────
+        // ── 2. TERRAFORM ────────────────────────────────────────
         stage('Terraform Init') {
             steps {
                 sh '''
@@ -49,18 +38,14 @@ pipeline {
             }
         }
 
-        // ── 4. ANSIBLE ───────────────────────────────────────────────
+        // ── 3. ANSIBLE ──────────────────────────────────────────
         stage('Run Ansible') {
             steps {
                 sshagent(credentials: ['ansible-ssh-key']) {
-                    sh '''
-                        echo "EC2 Public IP: $ANSIBLE_IP"
 
+                    sh '''
                         echo "[jenkins]" > /tmp/inventory.ini
                         echo "$ANSIBLE_IP ansible_user=ubuntu" >> /tmp/inventory.ini
-
-                        echo "=== Generated Inventory ==="
-                        cat /tmp/inventory.ini
 
                         ssh-keyscan -H $ANSIBLE_IP >> ~/.ssh/known_hosts 2>/dev/null
 
@@ -73,173 +58,153 @@ pipeline {
             }
         }
 
-        // ── 5. SONARQUBE ─────────────────────────────────────────────
+        // ── 4. SONARQUBE ────────────────────────────────────────
         stage('SonarQube Scan') {
             steps {
+
                 withCredentials([string(
                     credentialsId: 'SONAR_TOKEN',
                     variable: 'SONAR_TOKEN'
                 )]) {
+
                     sh '''
                         sonar-scanner \
-                            -Dsonar.projectKey=skillpulse \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=$SONAR_HOST \
-                            -Dsonar.login=$SONAR_TOKEN
+                        -Dsonar.projectKey=skillpulse \
+                        -Dsonar.sources=. \
+                        -Dsonar.host.url=$SONAR_HOST \
+                        -Dsonar.login=$SONAR_TOKEN
                     '''
                 }
             }
         }
 
-        // ── 6. TRIVY FILE SCAN ───────────────────────────────────────
+        // ── 5. TRIVY FILE SCAN ──────────────────────────────────
         stage('Trivy File Scan') {
             steps {
                 sh '''
                     trivy fs . \
-                        --severity HIGH,CRITICAL \
-                        --exit-code 0 \
-                        --format table
+                    --severity HIGH,CRITICAL \
+                    --exit-code 0
                 '''
             }
         }
 
-        // ── 7. BUILD DOCKER IMAGES ───────────────────────────────────
+        // ── 6. BUILD DOCKER IMAGES ──────────────────────────────
         stage('Build Docker Images') {
             steps {
-                sh 'make build TAG=$TAG'
+                sh '''
+                    docker build -t $DOCKER_BACKEND:$TAG ./backend
+
+                    docker build -t $DOCKER_FRONTEND:$TAG ./frontend
+                '''
             }
         }
 
-        // ── 8. TRIVY IMAGE SCAN ──────────────────────────────────────
+        // ── 7. TRIVY IMAGE SCAN ─────────────────────────────────
         stage('Trivy Image Scan') {
             steps {
                 sh '''
-                    trivy image --severity HIGH,CRITICAL --exit-code 0 $DOCKER_BACKEND:$TAG
-                    trivy image --severity HIGH,CRITICAL --exit-code 0 $DOCKER_FRONTEND:$TAG
+                    trivy image $DOCKER_BACKEND:$TAG
+
+                    trivy image $DOCKER_FRONTEND:$TAG
                 '''
             }
         }
 
-        // ── 9. DOCKER LOGIN & PUSH ───────────────────────────────────
+        // ── 8. DOCKER LOGIN ─────────────────────────────────────
         stage('Docker Login') {
             steps {
+
                 withCredentials([usernamePassword(
                     credentialsId: 'docker',
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+
+                    sh '''
+                        echo $DOCKER_PASS | docker login \
+                        -u $DOCKER_USER --password-stdin
+                    '''
                 }
             }
         }
 
+        // ── 9. PUSH DOCKER IMAGES ───────────────────────────────
         stage('Push Images') {
             steps {
                 sh '''
                     docker push $DOCKER_BACKEND:$TAG
+
                     docker push $DOCKER_FRONTEND:$TAG
                 '''
             }
         }
 
-        // ── 10. ENSURE KIND CLUSTER ──────────────────────────────────
-        stage('Ensure Kind Cluster') {
+        // ── 10. UPDATE K8S MANIFESTS ────────────────────────────
+        stage('Update Kubernetes Manifests') {
             steps {
+
                 sh '''
-                    # Create cluster if not exists
-                    if ! kind get clusters | grep -q skillpulse; then
-                        echo "Creating Kind cluster..."
-                        kind create cluster --name skillpulse
-                    else
-                        echo "Kind cluster already exists"
-                    fi
+                    sed -i "s|image: .*skillpulse-backend.*|image: $DOCKER_BACKEND:$TAG|g" k8s/20-backend.yaml
 
-                    # Always refresh kubeconfig for jenkins user
-                    mkdir -p /var/lib/jenkins/.kube
-                    kind get kubeconfig --name skillpulse > /var/lib/jenkins/.kube/config
-                    chmod 600 /var/lib/jenkins/.kube/config
+                    sed -i "s|image: .*skillpulse-frontend.*|image: $DOCKER_FRONTEND:$TAG|g" k8s/30-frontend.yaml
 
-                    # Set correct context
-                    kubectl config use-context kind-skillpulse
+                    echo "=== Updated Backend Manifest ==="
+                    grep image k8s/20-backend.yaml
 
-                    # Verify cluster is reachable
-                    kubectl cluster-info
-                    kubectl get nodes
+                    echo "=== Updated Frontend Manifest ==="
+                    grep image k8s/30-frontend.yaml
                 '''
             }
         }
 
-        // ── 11. DEPLOY TO KUBERNETES ─────────────────────────────────
-        stage('Deploy Kubernetes') {
+        // ── 11. PUSH UPDATED MANIFESTS TO GITHUB ───────────────
+        stage('Push Manifest Changes') {
             steps {
-                sh '''
-                    # Load images into kind cluster
-                    kind load docker-image $DOCKER_BACKEND:$TAG  --name skillpulse
-                    kind load docker-image $DOCKER_FRONTEND:$TAG --name skillpulse
 
-                    # Apply manifests
-                    make apply TAG=$TAG
-                '''
+                withCredentials([string(
+                    credentialsId: 'github-token',
+                    variable: 'GITHUB_TOKEN'
+                )]) {
+
+                    sh '''
+                        git config user.email "jenkins@cloudforge.com"
+
+                        git config user.name "jenkins"
+
+                        git add k8s/
+
+                        git commit -m "Updated image tags to build $TAG" || echo "No changes to commit"
+
+                        git push https://$GITHUB_TOKEN@github.com/Haidersk/github-actions-kubernetes-masterclass.git HEAD:main
+                    '''
+                }
             }
         }
 
-        // ── 12. MONITORING SETUP ─────────────────────────────────────
-        stage('Monitoring Setup') {
+        // ── 12. VERIFY ARGOCD ───────────────────────────────────
+        stage('Verify ArgoCD Sync') {
             steps {
+
                 sh '''
-                    # Create monitoring namespace
-                    kubectl get namespace monitoring 2>/dev/null || \
-                        kubectl create namespace monitoring
+                    kubectl get applications -n argocd
 
-                    # Add Helm repos
-                    helm repo add prometheus-community \
-                        https://prometheus-community.github.io/helm-charts 2>/dev/null || true
-                    helm repo add grafana \
-                        https://grafana.github.io/helm-charts 2>/dev/null || true
-                    helm repo update
+                    kubectl get pods -n skillpulse
 
-                    # Install Prometheus
-                    helm upgrade --install prometheus \
-                        prometheus-community/prometheus \
-                        -n monitoring \
-                        --wait --timeout 3m
-
-                    # Install Grafana
-                    helm upgrade --install grafana \
-                        grafana/grafana \
-                        -n monitoring \
-                        --wait --timeout 3m
-
-                    echo "=== Monitoring Stack ==="
-                    kubectl get pods -n monitoring
-                '''
-            }
-        }
-
-        // ── 13. VERIFY ───────────────────────────────────────────────
-        stage('Verify Deployment') {
-            steps {
-                sh '''
-                    echo "=== Application Pods ==="
-                    make status
-
-                    echo "=== Monitoring Pods ==="
-                    kubectl get pods -n monitoring
-
-                    echo "=== All Services ==="
                     kubectl get svc -n skillpulse
-                    kubectl get svc -n monitoring
                 '''
             }
         }
     }
 
     post {
+
         success {
-            echo "✅ Pipeline SUCCESS - Build #${BUILD_NUMBER} deployed successfully"
+            echo "✅ GitOps Pipeline SUCCESS - Build #${BUILD_NUMBER}"
         }
+
         failure {
-            echo "❌ Pipeline FAILED - Build #${BUILD_NUMBER} - check stage logs above"
+            echo "❌ GitOps Pipeline FAILED - Build #${BUILD_NUMBER}"
         }
     }
 }
