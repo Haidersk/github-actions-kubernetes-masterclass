@@ -49,7 +49,7 @@ pipeline {
             steps {
                 sshagent(credentials: ['ansible-ssh-key']) {
                     sh '''
-                        PUBLIC_IP="3.238.131.108"
+                        PUBLIC_IP="18.209.224.167"
 
                         echo "EC2 Public IP: $PUBLIC_IP"
 
